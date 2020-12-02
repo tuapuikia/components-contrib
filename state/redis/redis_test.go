@@ -7,7 +7,9 @@ package redis
 
 import (
 	"context"
+	"fmt"
 	"testing"
+	"time"
 
 	miniredis "github.com/alicebob/miniredis/v2"
 	"github.com/dapr/components-contrib/state"
@@ -105,6 +107,72 @@ func TestParseConnectedSlavs(t *testing.T) {
 		slaves := store.parseConnectedSlaves("# Replication\r\nrole:master\r\nconnected_slaves:1")
 		assert.Equal(t, 1, slaves, "connected slaves must be 1")
 	})
+}
+
+func TestUpsertWithEtag(t *testing.T) {
+	s, c := setupMiniredis()
+	defer s.Close()
+
+	ss := &StateStore{
+		client: c,
+		json:   jsoniter.ConfigFastest,
+		logger: logger.NewLogger("test"),
+	}
+
+	key := fmt.Sprintf("key-%d", time.Now().UnixNano())
+
+	if err := ss.Set(&state.SetRequest{
+		Key:   key,
+		Value: "initial value",
+		Options: state.SetStateOption{
+			Concurrency: "first-write",
+			Consistency: "strong",
+		},
+	}); err != nil {
+		t.Fatalf("error on initial value set: %v", err)
+	}
+
+	item, err := ss.Get(&state.GetRequest{
+		Key: key,
+		Options: state.GetStateOption{
+			Consistency: "strong",
+		},
+	})
+	if err != nil {
+		t.Fatalf("error on initial value get: %v", err)
+	}
+	assert.Equal(t, "\"initial value\"", string(item.Data))
+	assert.Equal(t, "1", item.ETag)
+
+	if err := ss.Set(&state.SetRequest{
+		Key:   key,
+		Value: "new value",
+		ETag:  "100",
+		Options: state.SetStateOption{
+			Concurrency: "first-write",
+			Consistency: "strong",
+		},
+	}); err == nil {
+		t.Fatalf("expected error on set with an invalid etag")
+	}
+
+	item2, err := ss.Get(&state.GetRequest{
+		Key: key,
+		Options: state.GetStateOption{
+			Consistency: "strong",
+		},
+	})
+	if err != nil {
+		t.Fatalf("error on updated value get: %v", err)
+	}
+	assert.Equal(t, "\"initial value\"", string(item2.Data))
+
+	if err := ss.Delete(&state.DeleteRequest{
+		Key:  key,
+		ETag: item2.ETag,
+	}); err != nil {
+		t.Fatalf("error on updated value get: %v", err)
+	}
 }
 
 func TestTransactionalUpsert(t *testing.T) {
