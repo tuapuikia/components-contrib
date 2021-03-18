@@ -111,11 +111,8 @@ func (p *Pulsar) Subscribe(req pubsub.SubscribeRequest, handler func(msg *pubsub
 		if err != nil {
 			p.logger.Debugf("Could not subscribe %s", req.Topic)
 		}
-
 		go p.ListenMessage(consumer, req.Topic, handler)
-
 	} else {
-
 		options := pulsar.ConsumerOptions{
 			Topic:            req.Topic,
 			SubscriptionName: p.metadata.ConsumerID,
@@ -128,9 +125,7 @@ func (p *Pulsar) Subscribe(req pubsub.SubscribeRequest, handler func(msg *pubsub
 		if err != nil {
 			p.logger.Debugf("Could not subscribe %s", req.Topic)
 		}
-
 		go p.ListenMessage(consumer, req.Topic, handler)
-
 	}
 
 	return nil
